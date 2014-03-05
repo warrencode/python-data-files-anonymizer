@@ -2,13 +2,16 @@ import os, sys, ConfigParser, time, shutil
 import xlrd, openpyxl, xlsxwriter, pandas
 from collections import OrderedDict
 
+# each file has metadata and a collection of worksheets stored in an OrderedDict
+class dataworksheet:
+    pass
+
 # checks lower-case inclusions
 def contains_one_of(mystring, listtocheck):
 	lowerlisttocheck = []
 	for listitem in listtocheck:
 		lowerlisttocheck.append(listitem.lower())
 	return any(stringclue in mystring.lower() for stringclue in lowerlisttocheck)
-
 
 # Guess column type, so far only based on the column name.
 # Could check for uniqueness, names, 8-digit numbers (UBC student IDs) to guess if the column is Primary Key, demographic, ID, or data.
@@ -30,7 +33,7 @@ def guess_column_data_type_from_name(columnnamelist):
 
 # return an ordered dictionary of sheets
 def read_in_data_from_file(mydatafilename):
-    sheet_collection_to_return = OrderedDict()
+    sheet_collection_to_return = [] # OrderedDict()
     if mydatafilename.lower().endswith(('.xls', '.xlsx')):
         preworkbook = xlrd.open_workbook(mydatafilename)
         print "The number of worksheets is", preworkbook.nsheets
@@ -45,54 +48,31 @@ def read_in_data_from_file(mydatafilename):
                 nonempty_worksheets.append(worksheet_name)
             else:
             	print mydatafilename, worksheet.name, "is empty."
-            	continue
 
         workbook = pandas.ExcelFile(mydatafilename)
-##        print workbook.sheet_names
-##        sheet_set = {sheet_name: workbook.parse(sheet_name) for sheet_name in nonempty_worksheets}
 
         for worksheet_name in all_worksheets:
+            worksheet = dataworksheet()
+            worksheet.name = worksheet_name
             if worksheet_name in nonempty_worksheets:
                 print " "
                 print worksheet_name
-                worksheet = workbook.parse(worksheet_name)
-                print worksheet.head()
-                sheet_collection_to_return[worksheet_name] = worksheet
+                worksheet.data = workbook.parse(worksheet_name)
+                worksheet.column_types = guess_column_data_type_from_name(worksheet.data.columns)
+                print worksheet.data.head()
             else:
-                sheet_collection_to_return[worksheet_name] = None
-
-##            column_names = []
-##            for cx in range(worksheet.ncols):
-##            	if (len(worksheet.col_values(cx))>4):
-##            		print worksheet.col_values(cx)[0],"=",worksheet.col_values(cx)[1:4],"..."
-##            	else:
-##            		print worksheet.col_values(cx)[0],"="
-##            	column_names.append(worksheet.col_values(cx)[0])
-##            column_data_types = guess_column_data_type_from_name(column_names)
-##            #print "Column data types:",column_data_types
+                worksheet.data = None
+                worksheet.columns = None
+            sheet_collection_to_return.append(worksheet)
     elif mydatafilename.lower().endswith('.csv'):
-        worksheet = pandas.read_csv(mydatafilename)
-        print worksheet
-        sheet_collection_to_return[mydatafilename] = worksheet
-##		csv_data = []
-###		data_to_return = []
-##		with open(mydatafilename, 'rb') as csvfile:
-###			dialect = csv.Sniffer().sniff(csvfile.read(1024))
-###			csvfile.seek(0)
-##			myreader = csv.DictReader(csvfile, delimiter=',')
-##			for row in myreader:
-##				csv_data.append(row)
-##		print csv_data
-##
-##		column_names = csv_data[0].keys()
-##		column_data_types = guess_column_data_type_from_name(column_names)
-##
-###		data_to_return[mydatafilename] = csv_data
+        worksheet = dataworksheet()
+        worksheet.name = mydatafilename
+        worksheet.data = pandas.read_csv(mydatafilename)
+        worksheet.columns_types = guess_column_data_type_from_name(worksheet.data.columns)
+        sheet_collection_to_return.append(worksheet)
     else:
 		print "Data file", mydatafilename, "not recognized; looking for xls, xlsx and csv files only."
-
     return(sheet_collection_to_return)
-
 
 # Uses filename to choose from xls, csv, etc.
 # Later, should check date of input file; only write if target file is absent, prompt if input file has changed.
@@ -103,13 +83,13 @@ def write_cleaned_data_file(originalfilename, cleaneddata, outputdir):
     if originalfilename.lower().endswith(('.xls', '.xlsx')):
         # Currently ignores any empty or otherwise nonregular sheets; they are not copied over.
         ewriter = pandas.ExcelWriter(outputfilename)
-        for sheet_name,sheet_data in cleaneddata.iteritems():
-            if not sheet_data is None:
-                sheet_data.to_excel(ewriter, sheet_name)
+        for worksheet in cleaneddata:
+            if not worksheet.data is None:
+                worksheet.data.to_excel(ewriter, worksheet.name, index=False)
         ewriter.save()
         print "Wrote", os.path.basename(originalfilename)
     elif originalfilename.lower().endswith('.csv'):
-        cleaneddata[originalfilename].to_csv(outputfilename)
+        cleaneddata[0].data.to_csv(outputfilename, index=False)
         print "Wrote", os.path.basename(originalfilename)
     else:
         # copy directly with name unchanged (no anonymizing performed)
@@ -121,6 +101,16 @@ def write_cleaned_data_file(originalfilename, cleaneddata, outputdir):
             print os.path.basename(originalfilename),"is the same in the source and target directories (not copied)."
 
 
+# Accept a list of primary IDs
+# first iteration is just to use the length and the projects's random seed and new ID format to make random ones. 
+# Compare with previous alternate list (even if incomplete) to confirm that scheme has been preserved.
+def generate_alternate_ids(oldidlist, randomseedtouse):
+    random.seed(randomseedtouse)
+    newidlist = set()
+    while len(newidlist) < len(oldidlist):
+        newidlist.add(random.randint(100000000,999999999))
+    return(list(newidlist))
+    
 
 ##----------------------------------------------------------------------------------------------------------------------
 ## Main script starts here
@@ -132,6 +122,8 @@ config.read("../metafiles/project_settings.txt")
 print "Run of project", config.get("Project","name"), "started on", time.strftime('%Y-%m-%d')
 RAWDATA_DIR = config.get("Data","Raw data directory")
 OUTPUTDATA_DIR = config.get("Data","Output data directory")
+METAFILE_DIR = "./metafiles/"
+RANDOM_SEED = 123456
 
 data_collection = {}
 
@@ -142,13 +134,19 @@ for datafilename in os.listdir(RAWDATA_DIR):
 
 print data_collection
 print "*** Anonymization process happens here. ***"
-print "-----------------------------------------------------------"
 
+print "Collect ID list"
+primaryIDlist = range(1,1000)
+
+
+print "-----------------------------------------------------------"
 
 for datafilename in os.listdir(RAWDATA_DIR):
 	write_cleaned_data_file(RAWDATA_DIR + datafilename, data_collection[datafilename], OUTPUTDATA_DIR)
 
 print "-----------------------------------------------------------"
+
+
 
 
 # guess_data_type
@@ -171,9 +169,6 @@ print "-----------------------------------------------------------"
 # aggregate_across_sheets
 # Optional, joins all available sheets using the Primary IDs, filling in appropriate NA for missing data. If column names are duplicated, use file/sheet name or prompt for prefix/suffix.
 
-
-# generate_alternate_ids
-# Accept a list of primary IDs; first iteration is just to use the length and the projects's random seed and new ID format to make random ones. Compare with previous alternate list (even if incomplete) to confirm that scheme has been preserved.
 
 # blend_with_master_list
 # Compares given list of IDs with existing master list and determines which are not present, then adds those to the bottom and generates new random list to match these.
