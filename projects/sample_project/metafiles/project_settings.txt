@@ -1,0 +1,14 @@
+# Comments allowed; examples here:
+# [My Section]
+# foodir: %(dir)s/whatever
+# dir=frob
+# long: this value continues
+#    in the next line
+[Project]
+name: My sample data anonymization project.
+directory: sample_project
+
+# Previously had some special directories; from now on should have standard subdirectories off the project name.
+# [Data]
+# Raw data directory: ./sample_sheets/
+# Output data directory: ./output/
