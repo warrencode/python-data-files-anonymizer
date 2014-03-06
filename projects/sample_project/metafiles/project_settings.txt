@@ -4,9 +4,10 @@
 # dir=frob
 # long: this value continues
 #    in the next line
-[Project]
-name: My sample data anonymization project.
+[Project Settings]
+description: My sample data anonymization project.
 directory: sample_project
+Random Seed: 123456
 
 # Previously had some special directories; from now on should have standard subdirectories off the project name.
 # [Data]

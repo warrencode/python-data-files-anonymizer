@@ -1,6 +1,6 @@
-,STDID,First Name,Last Name,Gender,Secion,Grade,Prereq?,Comment
-0,12345678,Ard,Roy,M,101,82,y,blurgle flurg
-1,23456789,Blarg,Broy,F,101,75,y,begagel begagel
-2,34567890,Foo,Slab Drab,M,101,41,y,I don't think so.
-3,10101010,Bar,Ploy,M,102,90,y,
-4,23674567,Baz,Wrest-Loy,F,102,68,n,"Messy ""things"" here %."
+STDID,First Name,Last Name,Gender,Secion,Grade,Prereq?,Comment
+12345678,Ard,Roy,M,101,82,y,blurgle flurg
+23456789,Blarg,Broy,F,101,75,y,begagel begagel
+34567890,Foo,Slab Drab,M,101,41,y,I don't think so.
+10101010,Bar,Ploy,M,102,90,y,
+23674567,Baz,Wrest-Loy,F,102,68,n,"Messy ""things"" here %."

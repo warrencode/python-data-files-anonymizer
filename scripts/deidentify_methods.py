@@ -1,4 +1,4 @@
-import os, sys, ConfigParser, time, shutil
+import os, sys, ConfigParser, time, shutil, random
 import xlrd, openpyxl, xlsxwriter, pandas
 from collections import OrderedDict
 
@@ -50,7 +50,6 @@ def read_in_data_from_file(mydatafilename):
             	print mydatafilename, worksheet.name, "is empty."
 
         workbook = pandas.ExcelFile(mydatafilename)
-
         for worksheet_name in all_worksheets:
             worksheet = dataworksheet()
             worksheet.name = worksheet_name
@@ -77,7 +76,6 @@ def read_in_data_from_file(mydatafilename):
 # Uses filename to choose from xls, csv, etc.
 # Later, should check date of input file; only write if target file is absent, prompt if input file has changed.
 def write_cleaned_data_file(originalfilename, cleaneddata, outputdir):
-    print cleaneddata
     fileextension = os.path.splitext(originalfilename)[1]
     outputfilename = outputdir + os.path.splitext(os.path.basename(originalfilename))[0] + "_anon" + fileextension
     if originalfilename.lower().endswith(('.xls', '.xlsx')):
@@ -100,30 +98,35 @@ def write_cleaned_data_file(originalfilename, cleaneddata, outputdir):
         else:
             print os.path.basename(originalfilename),"is the same in the source and target directories (not copied)."
 
-
 # Accept a list of primary IDs
 # first iteration is just to use the length and the projects's random seed and new ID format to make random ones. 
-# Compare with previous alternate list (even if incomplete) to confirm that scheme has been preserved.
-def generate_alternate_ids(oldidlist, randomseedtouse):
+# Could add: Compare with previous alternate list (even if incomplete) to confirm that scheme has been preserved.
+def generate_alternate_ids(originalidlist, currentalternateidlist, randomseedtouse):
     random.seed(randomseedtouse)
-    newidlist = set()
-    while len(newidlist) < len(oldidlist):
-        newidlist.add(random.randint(100000000,999999999))
-    return(list(newidlist))
+    fullaltidset = set(currentalternateidlist)
+    newalternateidlist = list(currentalternateidlist)
+    while len(fullaltidset) < len(originalidlist):
+        newaltid = random.randint(100000000,999999999)
+        if newaltid not in fullaltidset:
+            newalternateidlist.append(newaltid)
+            fullaltidset.add(newaltid)
+    return(newalternateidlist)
     
 
 ##----------------------------------------------------------------------------------------------------------------------
 ## Main script starts here
 ##----------------------------------------------------------------------------------------------------------------------
 
-config = ConfigParser.ConfigParser()
-config.read("../metafiles/project_settings.txt")
+PROJECT_NAME = "sample_project"
 
-print "Run of project", config.get("Project","name"), "started on", time.strftime('%Y-%m-%d')
-RAWDATA_DIR = config.get("Data","Raw data directory")
-OUTPUTDATA_DIR = config.get("Data","Output data directory")
-METAFILE_DIR = "./metafiles/"
-RANDOM_SEED = 123456
+print "Run of project", PROJECT_NAME, "started on", time.strftime('%Y-%m-%d')
+RAWDATA_DIR = "../projects/" + PROJECT_NAME + "/rawdata/"
+OUTPUTDATA_DIR = "../projects/" + PROJECT_NAME + "/output/"
+METAFILE_DIR = "../projects/" + PROJECT_NAME + "/metafiles/"
+
+config = ConfigParser.ConfigParser()
+config.read("../projects/" + PROJECT_NAME + "/metafiles/project_settings.txt")
+RANDOM_SEED = config.get("Project Settings", "Random Seed")
 
 data_collection = {}
 
@@ -136,7 +139,17 @@ print data_collection
 print "*** Anonymization process happens here. ***"
 
 print "Collect ID list"
-primaryIDlist = range(1,1000)
+primaryIDlist = range(1,10)
+anonIDlist = generate_alternate_ids(primaryIDlist, list(), RANDOM_SEED)
+
+for i in range(1,9):
+    print anonIDlist[i]
+print "----------------COMPARE---------------------"
+
+anonIDlist2 = generate_alternate_ids(range(1,30), anonIDlist, RANDOM_SEED)
+
+for j in range(1,15):
+    print anonIDlist2[j]
 
 
 print "-----------------------------------------------------------"
