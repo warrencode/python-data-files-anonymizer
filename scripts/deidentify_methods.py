@@ -2,20 +2,35 @@ import os, sys, ConfigParser, time, shutil, random
 import xlrd, openpyxl, xlsxwriter, pandas
 from collections import OrderedDict
 
-# each file has metadata and a collection of worksheets stored in an OrderedDict
 class dataworksheet:
+    """
+    Simple object for storing information for a worksheet or CSV file;
+    each sheet has a name (String name), data (pandas.DataFrame data)
+    and columns categorized (List of Strings column_types) 
+
+    Each Excel files is read into a list of dataworksheets.
+
+    Each CSV files is read into a list of just one dataworksheet.
+    """
     pass
 
-# checks lower-case inclusions
-def contains_one_of(mystring, listtocheck):
+def contains_one_of(stringtofind, listtocheck):
+    """
+    Checks for membership of a string in a list of strings (case-insensitive).
+
+    Keyword arguments:
+    stringtofind -- string to look for in the list
+    listtocheck -- list of strings that stringtofind will be compared with
+    """
 	lowerlisttocheck = []
 	for listitem in listtocheck:
 		lowerlisttocheck.append(listitem.lower())
-	return any(stringclue in mystring.lower() for stringclue in lowerlisttocheck)
+	return any(stringclue in stringtofind.lower() for stringclue in lowerlisttocheck)
 
-# Guess column type, so far only based on the column name.
-# Could check for uniqueness, names, 8-digit numbers (UBC student IDs) to guess if the column is Primary Key, demographic, ID, or data.
 def guess_column_data_type_from_name(columnnamelist):
+    """
+    Given list of column names, return a list of guessed column types.
+    """
 	print "Column data types:"
 	print "------------------"
 	guess_list = OrderedDict()
@@ -31,8 +46,10 @@ def guess_column_data_type_from_name(columnnamelist):
 		print column_name,"-",data_type_guess
 	return guess_list
 
-# return an ordered dictionary of sheets
 def read_in_data_from_file(mydatafilename):
+    """
+    Determine file format (.xls, .xlsx or .csv) and read, return list of dataworksheet objects.
+    """
     sheet_collection_to_return = [] # OrderedDict()
     if mydatafilename.lower().endswith(('.xls', '.xlsx')):
         preworkbook = xlrd.open_workbook(mydatafilename)
@@ -48,6 +65,7 @@ def read_in_data_from_file(mydatafilename):
                 nonempty_worksheets.append(worksheet_name)
             else:
             	print mydatafilename, worksheet.name, "is empty."
+        preworkbook.release_resources()
 
         workbook = pandas.ExcelFile(mydatafilename)
         for worksheet_name in all_worksheets:
@@ -67,15 +85,26 @@ def read_in_data_from_file(mydatafilename):
         worksheet = dataworksheet()
         worksheet.name = mydatafilename
         worksheet.data = pandas.read_csv(mydatafilename)
-        worksheet.columns_types = guess_column_data_type_from_name(worksheet.data.columns)
+        worksheet.column_types = guess_column_data_type_from_name(worksheet.data.columns)
         sheet_collection_to_return.append(worksheet)
     else:
 		print "Data file", mydatafilename, "not recognized; looking for xls, xlsx and csv files only."
     return(sheet_collection_to_return)
 
-# Uses filename to choose from xls, csv, etc.
-# Later, should check date of input file; only write if target file is absent, prompt if input file has changed.
+def confirm_data_column_types(worksheet):
+
 def write_cleaned_data_file(originalfilename, cleaneddata, outputdir):
+    """
+    For .xls, .xlsx or .csv files, write out list of dataworksheet objects; otherwise just copy.
+
+    Files that have been anonymized will have the same filename as the originals
+    except that '_anon' is appended to the end of the name before the extension. 
+
+    Keyword arguments:
+    originalfilename -- same file name used by read_in_data_from_file to extract data
+    cleaneddata -- list of dataworksheet objects
+    outputdir -- where the output files will be created
+    """
     fileextension = os.path.splitext(originalfilename)[1]
     outputfilename = outputdir + os.path.splitext(os.path.basename(originalfilename))[0] + "_anon" + fileextension
     if originalfilename.lower().endswith(('.xls', '.xlsx')):
@@ -98,10 +127,24 @@ def write_cleaned_data_file(originalfilename, cleaneddata, outputdir):
         else:
             print os.path.basename(originalfilename),"is the same in the source and target directories (not copied)."
 
-# Accept a list of primary IDs
-# first iteration is just to use the length and the projects's random seed and new ID format to make random ones. 
-# Could add: Compare with previous alternate list (even if incomplete) to confirm that scheme has been preserved.
 def generate_alternate_ids(originalidlist, currentalternateidlist, randomseedtouse):
+    """
+    Extend list of alternate IDs to have a complete set anonymizing the originals.
+
+    Given a list of original identifiers and an existing list of anonymous IDs (could be empty),
+    extend the latter so that each original identifier has an anonymous ID based on a
+    randomly-generated number.  The new identifiers are based only on the position of the
+    original in the list, so there is no way to recover the original IDs without a master key.
+
+    If the same random seed is used that was used to generate currentalternateidlist,
+    the output list is an extended version (i.e. first len(currentalternateidlist) IDs
+    are identical) of currentalternateidlist, preserving any previously generated IDs
+
+    Keyword arguments:
+    originalidlist -- List of primary identifiers to be anonymized (currently only length is used)
+    currentalternateidlist -- list of dataworksheet objects
+    randomseedtouse -- Number to use as random seed.
+    """
     random.seed(randomseedtouse)
     fullaltidset = set(currentalternateidlist)
     newalternateidlist = list(currentalternateidlist)
@@ -112,6 +155,30 @@ def generate_alternate_ids(originalidlist, currentalternateidlist, randomseedtou
             fullaltidset.add(newaltid)
     return(newalternateidlist)
     
+def test_generate_alternate_ids():
+    """
+    Attempts creation and two extensions (generate_alternate_ids) of short list of anonymous IDs.
+    """
+    primaryIDlist = range(1,10)
+    anonIDlist = generate_alternate_ids(primaryIDlist, list(), RANDOM_SEED)
+
+    for i in range(1,9):
+        print anonIDlist[i]
+    print "----------------COMPARE---------------------"
+
+    anonIDlist2 = generate_alternate_ids(range(1,20), anonIDlist, RANDOM_SEED)
+
+    for j in range(1,15):
+        print anonIDlist2[j]
+    print "----------------COMPARE---------------------"
+
+    anonIDlist3 = generate_alternate_ids(range(1,30), anonIDlist2, RANDOM_SEED)
+
+    for k in range(1,25):
+        print anonIDlist3[k]
+
+
+print "-----------------------------------------------------------"
 
 ##----------------------------------------------------------------------------------------------------------------------
 ## Main script starts here
@@ -139,18 +206,7 @@ print data_collection
 print "*** Anonymization process happens here. ***"
 
 print "Collect ID list"
-primaryIDlist = range(1,10)
-anonIDlist = generate_alternate_ids(primaryIDlist, list(), RANDOM_SEED)
-
-for i in range(1,9):
-    print anonIDlist[i]
-print "----------------COMPARE---------------------"
-
-anonIDlist2 = generate_alternate_ids(range(1,30), anonIDlist, RANDOM_SEED)
-
-for j in range(1,15):
-    print anonIDlist2[j]
-
+# primaryIDlist = 
 
 print "-----------------------------------------------------------"
 
@@ -158,33 +214,3 @@ for datafilename in os.listdir(RAWDATA_DIR):
 	write_cleaned_data_file(RAWDATA_DIR + datafilename, data_collection[datafilename], OUTPUTDATA_DIR)
 
 print "-----------------------------------------------------------"
-
-
-
-
-# guess_data_type
-# Figure out sensible summary strategy for the column. Could correlate between numerical ones.
-
-# read_master_id_list
-# Returns the existing master list from the relevant metadata directory. Also reads the randomizing seed for the list and the anonymous ID style (default is project name string plus 10-digit number).
-
-# write_master_id_list
-# Compare with existing list; updates should effectively only append new primary IDs.
-
-# project_setup.py
-# Argument (or interactive) name of project, with confirmation and list of directories created.  Optional set own seed or use random seed, creates master ID list file with seed but no actual entries, maybe a placeholder message in case anyone looks at it.
-
-# To obtain Primary ID, ask for number of column or to see column headers, or read from existing metafile.
-
-# process_columns
-# Either reads from an existing metafile that describes the column names and types, or interactively confirms column types primed with guesses then writes a new metafile.
-
-# aggregate_across_sheets
-# Optional, joins all available sheets using the Primary IDs, filling in appropriate NA for missing data. If column names are duplicated, use file/sheet name or prompt for prefix/suffix.
-
-
-# blend_with_master_list
-# Compares given list of IDs with existing master list and determines which are not present, then adds those to the bottom and generates new random list to match these.
-
-# estimate_unique_identification
-# Use the demographic information and data (may need a way to exclude free text response data) find the smallest five unique bunches and report back.
