@@ -92,6 +92,38 @@ def read_in_data_from_file(mydatafilename):
     return(sheet_collection_to_return)
 
 def confirm_data_column_types(worksheet):
+    """
+    Interactive confirmation of column types in a dataworksheet.
+    """
+    pass
+
+def read_masterIDdictionary(masterIDkeyfilename):
+    pass
+
+def write_masterIDdictionary(masterIDdictionary, masterIDkeyfilename):
+    pass
+
+def blend_with_masterIDkey(currentprimaryIDlist, masterIDkeyfilename):
+    """
+    If any IDs are not in current master list, generate new alternates and extend master list.
+    """
+    pass
+
+def create_anonymous_worksheet(originalworksheet, masterIDdictionary):
+    """
+    Return an anonymized version of this worksheet using column types and anonymous ID list.
+
+    The column of PrimaryID type is replaced by elements from the masterIDdictionary.
+
+    Columns of other ID type and those set to "drop" type are dropped.
+
+    Other columns (demographics and data) are left as they are.
+
+    Keyword arguments:
+    originalworksheet -- dataworksheet containing original data and identifiers
+    masterIDdictionary -- keys are original IDs, values are anonymous replacements.
+    """
+    pass
 
 def write_cleaned_data_file(originalfilename, cleaneddata, outputdir):
     """
