@@ -22,29 +22,29 @@ def contains_one_of(stringtofind, listtocheck):
     stringtofind -- string to look for in the list
     listtocheck -- list of strings that stringtofind will be compared with
     """
-	lowerlisttocheck = []
-	for listitem in listtocheck:
-		lowerlisttocheck.append(listitem.lower())
-	return any(stringclue in stringtofind.lower() for stringclue in lowerlisttocheck)
+    lowerlisttocheck = []
+    for listitem in listtocheck:
+        lowerlisttocheck.append(listitem.lower())
+    return any(stringclue in stringtofind.lower() for stringclue in lowerlisttocheck)
 
 def guess_column_data_type_from_name(columnnamelist):
     """
-    Given list of column names, return a list of guessed column types.
+    Given list of column names, return OrderedDict of guessed column types with those names as keys.
     """
-	print "Column data types:"
-	print "------------------"
-	guess_list = OrderedDict()
-	for column_name in columnnamelist:
-		data_type_guess = "Data"
-		if contains_one_of(column_name, ['gender','sex','section','course']):
-			data_type_guess = "Demographic"
-		elif contains_one_of(column_name, ['name']):
-			data_type_guess = "ID"
-		elif contains_one_of(column_name, ['stdid','student']):
-			data_type_guess = "PrimaryID"
-		guess_list[column_name] = data_type_guess
-		print column_name,"-",data_type_guess
-	return guess_list
+    print "Column data types:"
+    print "------------------"
+    guess_list = OrderedDict()
+    for column_name in columnnamelist:
+        data_type_guess = "Data"
+        if contains_one_of(column_name, ['gender','sex','section','course']):
+            data_type_guess = "Demographic"
+        elif contains_one_of(column_name, ['name']):
+            data_type_guess = "ID"
+        elif contains_one_of(column_name, ['stdid','student']):
+            data_type_guess = "PrimaryID"
+        guess_list[column_name] = data_type_guess
+        print column_name,"-",data_type_guess
+    return guess_list
 
 def read_in_data_from_file(mydatafilename):
     """
@@ -61,10 +61,10 @@ def read_in_data_from_file(mydatafilename):
             print " "
             worksheet = preworkbook.sheet_by_name(worksheet_name)
             if worksheet.nrows>0:
-            	print mydatafilename, worksheet.name, "has", worksheet.nrows, "rows,", worksheet.ncols, "columns"
+                print mydatafilename, worksheet.name, "has", worksheet.nrows, "rows,", worksheet.ncols, "columns"
                 nonempty_worksheets.append(worksheet_name)
             else:
-            	print mydatafilename, worksheet.name, "is empty."
+                print mydatafilename, worksheet.name, "is empty."
         preworkbook.release_resources()
 
         workbook = pandas.ExcelFile(mydatafilename)
@@ -79,7 +79,7 @@ def read_in_data_from_file(mydatafilename):
                 print worksheet.data.head()
             else:
                 worksheet.data = None
-                worksheet.columns = None
+                worksheet.column_types = None
             sheet_collection_to_return.append(worksheet)
     elif mydatafilename.lower().endswith('.csv'):
         worksheet = dataworksheet()
@@ -88,14 +88,52 @@ def read_in_data_from_file(mydatafilename):
         worksheet.column_types = guess_column_data_type_from_name(worksheet.data.columns)
         sheet_collection_to_return.append(worksheet)
     else:
-		print "Data file", mydatafilename, "not recognized; looking for xls, xlsx and csv files only."
+        print "Data file", mydatafilename, "not recognized; looking for xls, xlsx and csv files only."
     return(sheet_collection_to_return)
 
 def confirm_data_column_types(worksheet):
     """
     Interactive confirmation of column types in a dataworksheet.
     """
-    pass
+    column_types_copy = (worksheet.column_types).copy()
+    confirmed_column_types = (worksheet.column_types).copy()
+    while len(column_types_copy) > 0:
+        currentliststart = len(confirmed_column_types) - len(column_types_copy) + 1
+        # Build choice text, including list of options.
+        choicestring = "Showing columns " + str(currentliststart) + "-" + str(currentliststart + min(len(confirmed_column_types)-currentliststart, 9)) + " out of " + str(len(confirmed_column_types)) + " total\n"
+        currentchoicelist = list()
+        for choicenumber in ['1','2','3','4','5','6','7','8','9','0']:
+            currentchoicelist.append(choicenumber)
+            currentcolumn = column_types_copy.popitem(last=False)
+            choicestring += "  [" + choicenumber + "] " + currentcolumn[0] + ": " + currentcolumn[1] + "\n"
+            if len(column_types_copy) == 0:
+                break
+        choicestring += "-------------------------"
+        # Display choices and request input
+        print choicestring
+        userchoice = raw_input("Choose a column type to change from the list above \nor press [Enter] to continue.\n")
+        # Until [Enter] is given as the input, keep requesting and processing choices.
+        while userchoice:
+            if userchoice in currentchoicelist:
+                chosen_column_number = int(userchoice) + currentliststart - 2 # added two 1-based indices
+                chosen_column_name = confirmed_column_types.keys()[chosen_column_number]
+                chosen_column_current_type = confirmed_column_types.values()[chosen_column_number]
+                print "Confirm " + chosen_column_name + ": " + chosen_column_current_type
+            else:
+                print "Invalid choice - please try again.\n\n"
+            print choicestring
+            userchoice = raw_input("Choose a column type to change from the list above \nor press [Enter] to continue.\n")
+    return(confirmed_column_types)
+
+
+
+def print_choices_for_input(choiceswithnames):
+    if set(choicedictionary.keys()).issubset(set('0','1','2','3','4','5','6','7','8','9')):
+        print "Choose from the list:"
+    else:
+        print "Choose from the list (you can use lower-case to choose):"
+    for label, choice in choiceswithnames.iteritems():
+        print "  [" + label + "] " + choice
 
 def read_masterIDdictionary(masterIDkeyfilename):
     pass
@@ -230,9 +268,9 @@ RANDOM_SEED = config.get("Project Settings", "Random Seed")
 data_collection = {}
 
 for datafilename in os.listdir(RAWDATA_DIR):
-	print datafilename, "\n"
-	data_collection[datafilename] = read_in_data_from_file(RAWDATA_DIR + datafilename)
-	print "-----------------------------------------------------------"
+    print datafilename, "\n"
+    data_collection[datafilename] = read_in_data_from_file(RAWDATA_DIR + datafilename)
+    print "-----------------------------------------------------------"
 
 print data_collection
 print "*** Anonymization process happens here. ***"
@@ -240,9 +278,14 @@ print "*** Anonymization process happens here. ***"
 print "Collect ID list"
 # primaryIDlist = 
 
+for filename, mydataworksheets in data_collection.iteritems():
+    for mydataworksheet in mydataworksheets:
+        if mydataworksheet.column_types:
+            revised_col_types = confirm_data_column_types(mydataworksheet)
+
 print "-----------------------------------------------------------"
 
 for datafilename in os.listdir(RAWDATA_DIR):
-	write_cleaned_data_file(RAWDATA_DIR + datafilename, data_collection[datafilename], OUTPUTDATA_DIR)
+    write_cleaned_data_file(RAWDATA_DIR + datafilename, data_collection[datafilename], OUTPUTDATA_DIR)
 
 print "-----------------------------------------------------------"
