@@ -50,6 +50,7 @@ def read_in_data_from_file(mydatafilename):
     """
     Determine file format (.xls, .xlsx or .csv) and read, return list of dataworksheet objects.
     """
+    # Determine sheet names and empty sheets (these are not handled well by pandas).
     sheet_collection_to_return = [] # OrderedDict()
     if mydatafilename.lower().endswith(('.xls', '.xlsx')):
         preworkbook = xlrd.open_workbook(mydatafilename)
@@ -66,7 +67,7 @@ def read_in_data_from_file(mydatafilename):
             else:
                 print mydatafilename, worksheet.name, "is empty."
         preworkbook.release_resources()
-
+        # Now read again but into pandas DataFrames, except empty sheets which are handled separately.
         workbook = pandas.ExcelFile(mydatafilename)
         for worksheet_name in all_worksheets:
             worksheet = dataworksheet()
@@ -75,57 +76,98 @@ def read_in_data_from_file(mydatafilename):
                 print " "
                 print worksheet_name
                 worksheet.data = workbook.parse(worksheet_name)
-                worksheet.column_types = guess_column_data_type_from_name(worksheet.data.columns)
+                #worksheet.column_types = guess_column_data_type_from_name(worksheet.data.columns)
                 print worksheet.data.head()
             else:
                 worksheet.data = None
-                worksheet.column_types = None
+                #worksheet.column_types = None
             sheet_collection_to_return.append(worksheet)
     elif mydatafilename.lower().endswith('.csv'):
         worksheet = dataworksheet()
         worksheet.name = mydatafilename
         worksheet.data = pandas.read_csv(mydatafilename)
-        worksheet.column_types = guess_column_data_type_from_name(worksheet.data.columns)
+        #worksheet.column_types = guess_column_data_type_from_name(worksheet.data.columns)
         sheet_collection_to_return.append(worksheet)
     else:
         print "Data file", mydatafilename, "not recognized; looking for xls, xlsx and csv files only."
     return(sheet_collection_to_return)
 
-def confirm_data_column_types(worksheet):
+def confirm_data_column_types(worksheetcollection):
     """
-    Interactive confirmation of column types in a dataworksheet.
+    Interactive confirmation of dataworksheet column types across all data files.
+    """
+    # check metafiles for existing column types; 
+    # if none exist, guess from column names and flag as needing review;
+    # if some are invalid, flag for review as well
+    for filename, mydataworksheets in worksheetcollection.iteritems():
+        for mydataworksheet in mydataworksheets:
+            pass
+    #worksheet.column_types = guess_column_data_type_from_name(worksheet.data.columns)
+
+
+def choose_column_to_adjust_type(worksheet):
+    """
+    Interactive choice of column in a dataworksheet.
     """
     column_types_copy = (worksheet.column_types).copy()
     confirmed_column_types = (worksheet.column_types).copy()
     while len(column_types_copy) > 0:
         currentliststart = len(confirmed_column_types) - len(column_types_copy) + 1
         # Build choice text, including list of options.
-        choicestring = "Showing columns " + str(currentliststart) + "-" + str(currentliststart + min(len(confirmed_column_types)-currentliststart, 9)) + " out of " + str(len(confirmed_column_types)) + " total\n"
+        columnchoicestring = "Showing columns " + str(currentliststart) + "-" + str(currentliststart + min(len(confirmed_column_types)-currentliststart, 9)) + " out of " + str(len(confirmed_column_types)) + " total\n"
         currentchoicelist = list()
-        for choicenumber in ['1','2','3','4','5','6','7','8','9','0']:
-            currentchoicelist.append(choicenumber)
+        for columnchoicenumber in ['1','2','3','4','5','6','7','8','9','0']:
+            currentchoicelist.append(columnchoicenumber)
             currentcolumn = column_types_copy.popitem(last=False)
-            choicestring += "  [" + choicenumber + "] " + currentcolumn[0] + ": " + currentcolumn[1] + "\n"
+            columnchoicestring += "  [" + columnchoicenumber + "] " + currentcolumn[0] + ": " + currentcolumn[1] + "\n"
             if len(column_types_copy) == 0:
                 break
-        choicestring += "-------------------------"
+        columnchoicestring += "-------------------------"
         # Display choices and request input
-        print choicestring
-        userchoice = raw_input("Choose a column type to change from the list above \nor press [Enter] to continue.\n")
+        print columnchoicestring
+        usercolumnchoice = raw_input("Choose a column to change from the list above \nor press [Enter] to continue.\n")
         # Until [Enter] is given as the input, keep requesting and processing choices.
-        while userchoice:
-            if userchoice in currentchoicelist:
-                chosen_column_number = int(userchoice) + currentliststart - 2 # added two 1-based indices
+        while usercolumnchoice:
+            if usercolumnchoice in currentchoicelist:
+                chosen_column_number = int(usercolumnchoice) + currentliststart - 2 # added two 1-based indices
                 chosen_column_name = confirmed_column_types.keys()[chosen_column_number]
-                chosen_column_current_type = confirmed_column_types.values()[chosen_column_number]
-                print "Confirm " + chosen_column_name + ": " + chosen_column_current_type
+                #chosen_column_current_type = confirmed_column_types.values()[chosen_column_number]
+                print "-------------------------------------"
+                confirmed_column_types[chosen_column_name] = choose_column_type(chosen_column_name, confirmed_column_types[chosen_column_name], random.sample(worksheet.data[chosen_column_name],5))
             else:
                 print "Invalid choice - please try again.\n\n"
-            print choicestring
-            userchoice = raw_input("Choose a column type to change from the list above \nor press [Enter] to continue.\n")
+            print columnchoicestring
+            usercolumnchoice = raw_input("Choose a column type to change from the list above \nor press [Enter] to continue.\n")
     return(confirmed_column_types)
 
-
+def choose_column_type(columnname, currentcolumntype, samplecolumnentries):
+    """
+    Interactive choice of column type.
+    """
+    newcolumntype = currentcolumntype
+    typechoicestring = "Five random entries from " + chosen_column_name + ":\n"
+    for entry in samplecolumnentries:
+        typechoicestring += entry
+        typechoicestring += "\n"
+    typechoicestring += "\nCurrently, " + chosen_column_name + " is " + chosen_column_current_type
+    typechoicestring += "(p) PrimaryID - incorporated into master ID list, will be replaced by anon. identifiers\n"
+    typechoicestring += "(i) ID - will be replaced by anon. identifiers\n"
+    typechoicestring += "(d) Drop - column will be dropped in output files\n"
+    typechoicestring += "(a) Data - non-ID data, will be kept as-is\n"
+    #typechoicestring += "(g) Demographic (assumes categorical)\n"
+    #typechoicestring += "(c) Categorical (non-demographic) data\n"
+    #typechoicestring += "(n) Numerical data\n"
+    #typechoicestring += "(t) Text data (e.g. free response survey item)\n"
+    typechoicestring += "-------------------------"
+    typechoices = {'p':"PrimaryID", 'i':"ID", 'd':"Drop", 'a':"Data"}
+    print typechoicestring
+    usertypechoice = raw_input("Choose a column type from the list above\nor press [Enter] to keep the current type.\n")
+    while usertypechoice:
+        if contains_one_of(usertypechoice, typechoices.keys()):
+            newcolumntype = typechoices[usertypechoice]
+        else:
+            print "Invalid choice - please try again.\n\n"
+    return(newcolumntype)
 
 def print_choices_for_input(choiceswithnames):
     if set(choicedictionary.keys()).issubset(set('0','1','2','3','4','5','6','7','8','9')):
@@ -247,45 +289,3 @@ def test_generate_alternate_ids():
     for k in range(1,25):
         print anonIDlist3[k]
 
-
-print "-----------------------------------------------------------"
-
-##----------------------------------------------------------------------------------------------------------------------
-## Main script starts here
-##----------------------------------------------------------------------------------------------------------------------
-
-PROJECT_NAME = "sample_project"
-
-print "Run of project", PROJECT_NAME, "started on", time.strftime('%Y-%m-%d')
-RAWDATA_DIR = "../projects/" + PROJECT_NAME + "/rawdata/"
-OUTPUTDATA_DIR = "../projects/" + PROJECT_NAME + "/output/"
-METAFILE_DIR = "../projects/" + PROJECT_NAME + "/metafiles/"
-
-config = ConfigParser.ConfigParser()
-config.read("../projects/" + PROJECT_NAME + "/metafiles/project_settings.txt")
-RANDOM_SEED = config.get("Project Settings", "Random Seed")
-
-data_collection = {}
-
-for datafilename in os.listdir(RAWDATA_DIR):
-    print datafilename, "\n"
-    data_collection[datafilename] = read_in_data_from_file(RAWDATA_DIR + datafilename)
-    print "-----------------------------------------------------------"
-
-print data_collection
-print "*** Anonymization process happens here. ***"
-
-print "Collect ID list"
-# primaryIDlist = 
-
-for filename, mydataworksheets in data_collection.iteritems():
-    for mydataworksheet in mydataworksheets:
-        if mydataworksheet.column_types:
-            revised_col_types = confirm_data_column_types(mydataworksheet)
-
-print "-----------------------------------------------------------"
-
-for datafilename in os.listdir(RAWDATA_DIR):
-    write_cleaned_data_file(RAWDATA_DIR + datafilename, data_collection[datafilename], OUTPUTDATA_DIR)
-
-print "-----------------------------------------------------------"
