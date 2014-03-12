@@ -1,5 +1,6 @@
-import os, sys, ConfigParser, time, shutil, random
+import os, sys, random
 import xlrd, openpyxl, xlsxwriter, pandas
+import ConfigParser, time, shutil, os
 from collections import OrderedDict
 
 class dataworksheet:
@@ -92,6 +93,17 @@ def read_in_data_from_file(mydatafilename):
         print "Data file", mydatafilename, "not recognized; looking for xls, xlsx and csv files only."
     return(sheet_collection_to_return)
 
+def retrieve_data_collection(datadirectory):
+    """
+    Converts data files in provided directory to dictionary of filename: dataworksheet list pairs.
+    """
+    data_collection = {}
+    for datafilename in os.listdir(datadirectory):
+        print datafilename, "\n"
+        data_collection[datafilename] = read_in_data_from_file(datadirectory + datafilename)
+        print "-----------------------------------------------------------"
+    return(data_collection)
+
 def confirm_data_column_types(worksheetcollection):
     """
     Interactive confirmation of dataworksheet column types across all data files.
@@ -103,7 +115,6 @@ def confirm_data_column_types(worksheetcollection):
         for mydataworksheet in mydataworksheets:
             pass
     #worksheet.column_types = guess_column_data_type_from_name(worksheet.data.columns)
-
 
 def choose_column_to_adjust_type(worksheet):
     """
@@ -150,14 +161,14 @@ def choose_column_type(columnname, currentcolumntype, samplecolumnentries):
         typechoicestring += entry
         typechoicestring += "\n"
     typechoicestring += "\nCurrently, " + chosen_column_name + " is " + chosen_column_current_type
-    typechoicestring += "(p) PrimaryID - incorporated into master ID list, will be replaced by anon. identifiers\n"
-    typechoicestring += "(i) ID - will be replaced by anon. identifiers\n"
-    typechoicestring += "(d) Drop - column will be dropped in output files\n"
-    typechoicestring += "(a) Data - non-ID data, will be kept as-is\n"
-    #typechoicestring += "(g) Demographic (assumes categorical)\n"
-    #typechoicestring += "(c) Categorical (non-demographic) data\n"
-    #typechoicestring += "(n) Numerical data\n"
-    #typechoicestring += "(t) Text data (e.g. free response survey item)\n"
+    typechoicestring += "[p] PrimaryID - incorporated into master ID list, will be replaced by anon. identifiers\n"
+    typechoicestring += "[i] ID - will be replaced by anon. identifiers\n"
+    typechoicestring += "[d] Drop - column will be dropped in output files\n"
+    typechoicestring += "[a] Data - non-ID data, will be kept as-is\n"
+    #typechoicestring += "[g] Demographic (assumes categorical)\n"
+    #typechoicestring += "[c] Categorical (non-demographic) data\n"
+    #typechoicestring += "[n] Numerical data\n"
+    #typechoicestring += "[t] Text data (e.g. free response survey item)\n"
     typechoicestring += "-------------------------"
     typechoices = {'p':"PrimaryID", 'i':"ID", 'd':"Drop", 'a':"Data"}
     print typechoicestring
@@ -169,31 +180,68 @@ def choose_column_type(columnname, currentcolumntype, samplecolumnentries):
             print "Invalid choice - please try again.\n\n"
     return(newcolumntype)
 
-def print_choices_for_input(choiceswithnames):
-    if set(choicedictionary.keys()).issubset(set('0','1','2','3','4','5','6','7','8','9')):
-        print "Choose from the list:"
-    else:
-        print "Choose from the list (you can use lower-case to choose):"
-    for label, choice in choiceswithnames.iteritems():
-        print "  [" + label + "] " + choice
+def read_masterIDdataframe(masterIDkeyfilename):
+    """
+    Read master ID key into a DataFrame.
+    """
+    return(pandas.read_csv(masterIDkeyfilename, dtype=object))
 
-def read_masterIDdictionary(masterIDkeyfilename):
-    pass
+def write_masterIDdataframe(masterIDdataframe, masterIDkeyfilename):
+    """
+    Write master ID DataFrame to file.
+    """
+    masterIDdataframe.to_csv(masterIDkeyfilename, index=False)
+    print "Wrote", os.path.basename(masterIDkeyfilename)
 
-def write_masterIDdictionary(masterIDdictionary, masterIDkeyfilename):
-    pass
-
-def blend_with_masterIDkey(currentprimaryIDlist, masterIDkeyfilename):
+def blend_with_masterIDkey(currentprimaryIDlist, masterIDkeyfilename, randomseedtouse):
     """
     If any IDs are not in current master list, generate new alternates and extend master list.
     """
-    pass
+    oldmasterIDkey = read_masterIDdataframe(masterIDkeyfilename)
+    oldalternateidlist = oldmasterIDkey["AnonID"].tolist()
+    newalternateidlist = generate_alternate_ids(currentprimaryIDlist, oldalternateidlist, randomseedtouse)
+    newmasterIDkey = pandas.concat(pandas.DataFrame(pandas.Series(data=currentprimaryIDlist, name="OriginalID")), pandas.DataFrame(pandas.Series(data=newalternateidlist, name="AnonID")), axis=1)
+    write_masterIDdataframe(newmasterIDkey, masterIDkeyfilename)
 
-def create_anonymous_worksheet(originalworksheet, masterIDdictionary):
+def collect_Primary_IDs(datacollection):
+    return(set())
+
+
+def anonymize_collection_IDs(datacollection, masterIDkeyfilename):
+    update_masterIDkey(datacollection, masterIDkeyfilename)
+    masterIDkey = read_masterIDdataframe(masterIDkeyfilename)
+    cleandatacollection = {}
+    # iterate through all worksheets, replacing PrimaryID and ID columns with the AnonID via joins.
+    for filename, mydataworksheets in datacollection.iteritems():
+        cleandatacollection[filename] = []
+        for mydataworksheet in mydataworksheets:
+            if mydataworksheet.column_types:
+                # iterate over columns, replace or drop as needed
+                #revised_col_types = confirm_data_column_types(mydataworksheet)
+                cleandatacollection[filename].append(mydataworksheet)
+            else:
+                cleandatacollection[filename].append(mydataworksheet)
+    # return the new datacollection
+    return(cleandatacollection)
+
+
+def update_masterIDkey(datacollection, masterIDkeyfilename, randomseedtouse):
+    oldmasterIDkey = read_masterIDdataframe(masterIDkeyfilename)
+    oldPrimaryIDlist = oldmasterIDkey["OriginalID"].tolist()
+    oldPrimaryIDset = set(oldPrimaryIDlist)    
+    fullPrimaryIDset = collect_Primary_IDs(data_collection)
+    newPrimaryIDset = fullPrimaryIDset.difference(oldPrimaryIDset)
+    if newPrimaryIDset:
+        fullPrimaryIDlist = oldPrimaryIDlist + list(newPrimaryIDset)
+        blend_with_masterIDkey(fullPrimaryIDlist, masterIDkeyfilename, randomseedtouse)
+    else:
+        print "No new IDs; master ID key unchanged."
+
+def create_anonymous_worksheet(originalworksheet, masterIDdataframe):
     """
     Return an anonymized version of this worksheet using column types and anonymous ID list.
 
-    The column of PrimaryID type is replaced by elements from the masterIDdictionary.
+    The column of PrimaryID type is replaced by elements from the masterIDdataframe.
 
     Columns of other ID type and those set to "drop" type are dropped.
 
@@ -201,7 +249,7 @@ def create_anonymous_worksheet(originalworksheet, masterIDdictionary):
 
     Keyword arguments:
     originalworksheet -- dataworksheet containing original data and identifiers
-    masterIDdictionary -- keys are original IDs, values are anonymous replacements.
+    masterIDdataframe -- keys are original IDs, values are anonymous replacements.
     """
     pass
 
@@ -238,6 +286,13 @@ def write_cleaned_data_file(originalfilename, cleaneddata, outputdir):
             print "Copied", os.path.basename(originalfilename)
         else:
             print os.path.basename(originalfilename),"is the same in the source and target directories (not copied)."
+
+def write_data_collection_to_output_directory(data_collection, inputdir, outputdir):
+    """
+    For each input directory file, write data items to output file (or copy if not of this type).
+    """
+    for datafilename in os.listdir(inputdir):
+        write_cleaned_data_file(inputdir + datafilename, data_collection[datafilename], outputdir)
 
 def generate_alternate_ids(originalidlist, currentalternateidlist, randomseedtouse):
     """
@@ -288,4 +343,37 @@ def test_generate_alternate_ids():
 
     for k in range(1,25):
         print anonIDlist3[k]
+
+print "-----------------------------------------------------------"
+
+##----------------------------------------------------------------------------------------------------------------------
+## Main script starts here
+##----------------------------------------------------------------------------------------------------------------------
+
+PROJECT_NAME = "sample_project"
+
+print "Run of project", PROJECT_NAME, "started on", time.strftime('%Y-%m-%d')
+RAWDATA_DIR = "../projects/" + PROJECT_NAME + "/rawdata/"
+OUTPUTDATA_DIR = "../projects/" + PROJECT_NAME + "/output/"
+METAFILE_DIR = "../projects/" + PROJECT_NAME + "/metafiles/"
+
+config = ConfigParser.ConfigParser()
+config.read("../projects/" + PROJECT_NAME + "/metafiles/project_settings.txt")
+RANDOM_SEED = config.get("Project Settings", "Random Seed")
+
+data_collection = retrieve_data_collection(RAWDATA_DIR)
+# print data_collection
+# confirm column types?
+
+print "*** Anonymization process happens here. ***"
+
+print "Collect ID list"
+
+cleaned_data_collection = anonymize_collection_IDs(data_collection, METAFILE_DIR + "masterIDkey.csv", RANDOM_SEED)
+
+print "-----------------------------------------------------------"
+
+write_data_collection_to_output_directory(data_collection, RAWDATA_DIR, OUTPUTDATA_DIR)
+
+print "-----------------------------------------------------------"
 
