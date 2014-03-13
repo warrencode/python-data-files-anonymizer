@@ -1,4 +1,4 @@
-import os, sys, random
+import os, sys, random, copy
 import xlrd, openpyxl, xlsxwriter, pandas
 import ConfigParser, time, shutil, os
 from collections import OrderedDict
@@ -38,7 +38,8 @@ def guess_column_data_type_from_name(columnnamelist):
     for column_name in columnnamelist:
         data_type_guess = "Data"
         if contains_one_of(column_name, ['gender','sex','section','course']):
-            data_type_guess = "Demographic"
+            #data_type_guess = "Demographic"
+            data_type_guess = "Data"
         elif contains_one_of(column_name, ['name']):
             data_type_guess = "ID"
         elif contains_one_of(column_name, ['stdid','student']):
@@ -76,18 +77,24 @@ def read_in_data_from_file(mydatafilename):
             if worksheet_name in nonempty_worksheets:
                 print " "
                 print worksheet_name
+                #tempdataframe = workbook.parse(worksheet_name)
+                #worksheet.data = tempdataframe.astype(int)
                 worksheet.data = workbook.parse(worksheet_name)
-                #worksheet.column_types = guess_column_data_type_from_name(worksheet.data.columns)
+                worksheet.column_types = guess_column_data_type_from_name(worksheet.data.columns)
                 print worksheet.data.head()
+                print worksheet.data.astype(str).head()
+                worksheet.hasdata = True
             else:
                 worksheet.data = None
-                #worksheet.column_types = None
+                worksheet.hasdata = False
+                worksheet.column_types = None
             sheet_collection_to_return.append(worksheet)
     elif mydatafilename.lower().endswith('.csv'):
         worksheet = dataworksheet()
         worksheet.name = mydatafilename
-        worksheet.data = pandas.read_csv(mydatafilename)
-        #worksheet.column_types = guess_column_data_type_from_name(worksheet.data.columns)
+        worksheet.data = pandas.read_csv(mydatafilename, dtype=object)
+        worksheet.hasdata = True
+        worksheet.column_types = guess_column_data_type_from_name(worksheet.data.columns)
         sheet_collection_to_return.append(worksheet)
     else:
         print "Data file", mydatafilename, "not recognized; looking for xls, xlsx and csv files only."
@@ -113,7 +120,7 @@ def confirm_data_column_types(worksheetcollection):
     # if some are invalid, flag for review as well
     for filename, mydataworksheets in worksheetcollection.iteritems():
         for mydataworksheet in mydataworksheets:
-            pass
+            mydataworksheet.column_types = guess_column_data_type_from_name(mydataworksheet.data.columns)
     #worksheet.column_types = guess_column_data_type_from_name(worksheet.data.columns)
 
 def choose_column_to_adjust_type(worksheet):
@@ -198,44 +205,36 @@ def blend_with_masterIDkey(currentprimaryIDlist, masterIDkeyfilename, randomseed
     If any IDs are not in current master list, generate new alternates and extend master list.
     """
     oldmasterIDkey = read_masterIDdataframe(masterIDkeyfilename)
+#    print currentprimaryIDlist
     oldalternateidlist = oldmasterIDkey["AnonID"].tolist()
+#    print "old alt list:" + oldalternateidlist
     newalternateidlist = generate_alternate_ids(currentprimaryIDlist, oldalternateidlist, randomseedtouse)
-    newmasterIDkey = pandas.concat(pandas.DataFrame(pandas.Series(data=currentprimaryIDlist, name="OriginalID")), pandas.DataFrame(pandas.Series(data=newalternateidlist, name="AnonID")), axis=1)
+#    print "new alt list:" + newalternateidlist
+    newmasterIDkey = pandas.concat([pandas.DataFrame(pandas.Series(data=currentprimaryIDlist, name="OriginalID")), pandas.DataFrame(pandas.Series(data=newalternateidlist, name="AnonID"))], axis=1)
     write_masterIDdataframe(newmasterIDkey, masterIDkeyfilename)
 
-def collect_Primary_IDs(datacollection):
-    return(set())
-
-
-def anonymize_collection_IDs(datacollection, masterIDkeyfilename):
-    update_masterIDkey(datacollection, masterIDkeyfilename)
-    masterIDkey = read_masterIDdataframe(masterIDkeyfilename)
-    cleandatacollection = {}
-    # iterate through all worksheets, replacing PrimaryID and ID columns with the AnonID via joins.
+def collect_PrimaryID_set_from_collection(datacollection):
+    """
+    Returns the PrimaryIDs from the given dataworksheet collection as a set.
+    """
+    primaryIDset = set()
     for filename, mydataworksheets in datacollection.iteritems():
-        cleandatacollection[filename] = []
         for mydataworksheet in mydataworksheets:
-            if mydataworksheet.column_types:
-                # iterate over columns, replace or drop as needed
-                #revised_col_types = confirm_data_column_types(mydataworksheet)
-                cleandatacollection[filename].append(mydataworksheet)
-            else:
-                cleandatacollection[filename].append(mydataworksheet)
-    # return the new datacollection
-    return(cleandatacollection)
+            #print filename + " getting list " + str(get_PrimaryID_list(mydataworksheet))
+            primaryIDset.update(get_PrimaryID_list(mydataworksheet))
+    return(primaryIDset)
 
+def get_PrimaryID_list(mydataworksheet):
+    """
+    Return the PrimaryID column of the given dataworksheet as a list.
 
-def update_masterIDkey(datacollection, masterIDkeyfilename, randomseedtouse):
-    oldmasterIDkey = read_masterIDdataframe(masterIDkeyfilename)
-    oldPrimaryIDlist = oldmasterIDkey["OriginalID"].tolist()
-    oldPrimaryIDset = set(oldPrimaryIDlist)    
-    fullPrimaryIDset = collect_Primary_IDs(data_collection)
-    newPrimaryIDset = fullPrimaryIDset.difference(oldPrimaryIDset)
-    if newPrimaryIDset:
-        fullPrimaryIDlist = oldPrimaryIDlist + list(newPrimaryIDset)
-        blend_with_masterIDkey(fullPrimaryIDlist, masterIDkeyfilename, randomseedtouse)
-    else:
-        print "No new IDs; master ID key unchanged."
+    If the dataworksheet is empty or has no PrimaryID column, returns an empty list.
+    """
+    if mydataworksheet.hasdata:
+        for column, columntype in mydataworksheet.column_types.iteritems():
+            if columntype=="PrimaryID":
+                return(map(str,map(int,mydataworksheet.data[column].tolist())))
+    return([])
 
 def create_anonymous_worksheet(originalworksheet, masterIDdataframe):
     """
@@ -247,11 +246,65 @@ def create_anonymous_worksheet(originalworksheet, masterIDdataframe):
 
     Other columns (demographics and data) are left as they are.
 
+    If the worksheet does not have DataFrame data, return is as-is.
+
     Keyword arguments:
     originalworksheet -- dataworksheet containing original data and identifiers
-    masterIDdataframe -- keys are original IDs, values are anonymous replacements.
+    masterIDdataframe -- OriginalID and AnonID columns, as in the master ID key file
     """
-    pass
+    # Need a copy of the given dataworksheet; use deepcopy because this is a class/compound object
+    newworksheet = copy.deepcopy(originalworksheet)
+    if originalworksheet.hasdata:
+        primaryIDlist = get_PrimaryID_list(originalworksheet)
+        replacementIDlist = matching_alternate_IDs(primaryIDlist, masterIDdataframe)
+        for column, columntype in originalworksheet.column_types.iteritems():
+            if columntype=="PrimaryID":
+                newworksheet.data[column] = replacementIDlist
+            elif columntype=="ID":
+                newworksheet.data[column] = replacementIDlist
+            elif columntype=="Drop":
+                newworksheet = newworksheet.drop(column, 1)
+            # columns of any other type are not changed
+    #print newworksheet.data
+    return(newworksheet)
+
+def anonymize_collection_IDs(datacollection, masterIDkeyfilename):
+    masterIDkey = read_masterIDdataframe(masterIDkeyfilename)
+    cleandatacollection = {}
+    # iterate through all worksheets, replacing PrimaryID and ID columns with the AnonID via joins.
+    for filename, mydataworksheets in datacollection.iteritems():
+        cleandatacollection[filename] = []
+        for mydataworksheet in mydataworksheets:
+            cleandatacollection[filename].append(create_anonymous_worksheet(mydataworksheet, masterIDkey))
+    # return the new datacollection
+    return(cleandatacollection)
+
+def update_masterIDkey(datacollection, masterIDkeyfilename, randomseedtouse):
+    """
+    Append any new IDs in the collection to the current master ID key (which starts as empty).
+    """
+    oldmasterIDkey = read_masterIDdataframe(masterIDkeyfilename)
+    oldPrimaryIDlist = oldmasterIDkey["OriginalID"].tolist()
+    oldPrimaryIDset = set(oldPrimaryIDlist)    
+    fullPrimaryIDset = collect_PrimaryID_set_from_collection(data_collection)
+    newPrimaryIDset = fullPrimaryIDset.difference(oldPrimaryIDset)
+    if newPrimaryIDset:
+        fullPrimaryIDlist = oldPrimaryIDlist + list(newPrimaryIDset)
+        blend_with_masterIDkey(fullPrimaryIDlist, masterIDkeyfilename, randomseedtouse)
+    else:
+        print "No new IDs; master ID key unchanged."
+
+def matching_alternate_IDs(listtomatch, fulldataframe):
+    """
+    Assumes given list is contained in first column of given Dataframe; returns matches from second column
+    """
+    #print fulldataframe
+    #print str(listtomatch)
+    frametolookup = pandas.DataFrame(pandas.Series(data=listtomatch, name="OriginalID"))
+    #print frametolookup
+    joinedframes = pandas.merge(frametolookup, fulldataframe, how='left')
+    #print joinedframes
+    return(joinedframes["AnonID"])
 
 def write_cleaned_data_file(originalfilename, cleaneddata, outputdir):
     """
@@ -271,11 +324,13 @@ def write_cleaned_data_file(originalfilename, cleaneddata, outputdir):
         # Currently ignores any empty or otherwise nonregular sheets; they are not copied over.
         ewriter = pandas.ExcelWriter(outputfilename)
         for worksheet in cleaneddata:
-            if not worksheet.data is None:
+            if worksheet.hasdata:
+                #print worksheet.data
                 worksheet.data.to_excel(ewriter, worksheet.name, index=False)
         ewriter.save()
         print "Wrote", os.path.basename(originalfilename)
     elif originalfilename.lower().endswith('.csv'):
+        #print cleaneddata[0].data
         cleaneddata[0].data.to_csv(outputfilename, index=False)
         print "Wrote", os.path.basename(originalfilename)
     else:
@@ -287,12 +342,12 @@ def write_cleaned_data_file(originalfilename, cleaneddata, outputdir):
         else:
             print os.path.basename(originalfilename),"is the same in the source and target directories (not copied)."
 
-def write_data_collection_to_output_directory(data_collection, inputdir, outputdir):
+def write_data_collection_to_output_directory(mydatacollection, inputdir, outputdir):
     """
     For each input directory file, write data items to output file (or copy if not of this type).
     """
     for datafilename in os.listdir(inputdir):
-        write_cleaned_data_file(inputdir + datafilename, data_collection[datafilename], outputdir)
+        write_cleaned_data_file(inputdir + datafilename, mydatacollection[datafilename], outputdir)
 
 def generate_alternate_ids(originalidlist, currentalternateidlist, randomseedtouse):
     """
@@ -367,13 +422,13 @@ data_collection = retrieve_data_collection(RAWDATA_DIR)
 
 print "*** Anonymization process happens here. ***"
 
-print "Collect ID list"
+update_masterIDkey(data_collection, METAFILE_DIR + "masterIDkey.csv", RANDOM_SEED)
 
-cleaned_data_collection = anonymize_collection_IDs(data_collection, METAFILE_DIR + "masterIDkey.csv", RANDOM_SEED)
+cleaned_data_collection = anonymize_collection_IDs(data_collection, METAFILE_DIR + "masterIDkey.csv")
 
 print "-----------------------------------------------------------"
 
-write_data_collection_to_output_directory(data_collection, RAWDATA_DIR, OUTPUTDATA_DIR)
+write_data_collection_to_output_directory(cleaned_data_collection, RAWDATA_DIR, OUTPUTDATA_DIR)
 
 print "-----------------------------------------------------------"
 

@@ -4,9 +4,11 @@ Here is an attempt to list the work needed on this project, and collect ideas fo
 
 ## Major: critical items
 
+### Handling non-data sheets
+* Blank sheets are ignored and currently not copied to output files.
+* Sheets that would not read into Dataframe would probably cause an error.
+
 ### Anonymization routine 
-* *read_master_id_list*: Returns the existing master list from the relevant metadata directory. Also reads the randomizing seed for the list and the anonymous ID style (default might be project name string plus 9-digit number; 10-digit numbers get into overflow issues with the generator and is probably overkill anyway).
-* *write_master_id_list*: Compare with existing list; updates should only append new primary IDs so that IDs in previously-generated anonymized files are still correct (*generate_alternate_ids* has this functionality already).
 * Column information
     * To obtain Primary ID, ask for number of column or to see column headers, or read from existing metafile.
     * *process_columns* or similar: Either reads from an existing metafile that describes the column names and types, or interactively confirms column types primed with guesses then writes a new metafile.
